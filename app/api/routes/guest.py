@@ -14,7 +14,6 @@ from app.models.chat import Chat
 
 router = APIRouter()
 
-
 # ✅ Request schema for guest interaction
 class GuestMessage(BaseModel):
     user_id: str
@@ -34,8 +33,8 @@ async def guest_interact(payload: GuestMessage, db: Session = Depends(get_db)):
         user = User(
             id=payload.user_id,
             name=payload.name,
-            travel_type=payload.preferences.get("travel_type", "solo"),
-            food_pref=payload.preferences.get("food", "any")
+            travel_type=payload.preferences.get("travel_type", "solo") if payload.preferences else "solo",
+            food_pref=payload.preferences.get("food", "any") if payload.preferences else "any"
         )
         db.add(user)
         db.commit()
@@ -50,31 +49,37 @@ async def guest_interact(payload: GuestMessage, db: Session = Depends(get_db)):
     user_profile = {"name": user.name, "preferences": payload.preferences}
     ai_response = await generate_response(payload.message, user_profile)
 
-    # 4️⃣ Smart room automation triggers
+    # 4️⃣ Smart room automation triggers (Must use 'await' for async services)
     room_actions = []
-    if "hot" in payload.message.lower():
-        room_actions.append(set_temperature(payload.room_id, 22))
-    if "dark" in payload.message.lower():
-        room_actions.append(toggle_light(payload.room_id, "on"))
+    message_content = payload.message.lower()
+    
+    if "hot" in message_content or "temperature" in message_content:
+        action = await set_temperature(payload.room_id, 22)
+        room_actions.append(action)
+        
+    if "dark" in message_content or "lights" in message_content:
+        action = await toggle_light(payload.room_id, "on")
+        room_actions.append(action)
 
     # 5️⃣ Save chat to DB
-    chat = Chat(
+    # Renamed variable to 'new_chat' to avoid conflict with the 'Chat' model name
+    new_chat = Chat(
         user_id=user.id,
         message=payload.message,
         response=ai_response,
         sentiment=sentiment
     )
-    db.add(chat)
+    db.add(new_chat)
     db.commit()
-    db.refresh(chat)
+    db.refresh(new_chat)
 
-    # 6️⃣ Recommendation System
+    # 6️⃣ Recommendation System (Must use 'await')
     past_chats = db.query(Chat).filter(Chat.user_id == user.id).all()
     past_activities = [c.message for c in past_chats if "activity" in c.message.lower()]
     past_foods = [c.message for c in past_chats if "food" in c.message.lower()]
 
-    activities = recommend_activities(user.travel_type, past_activities)
-    foods = recommend_food(user.food_pref, past_foods)
+    activities = await recommend_activities(user.travel_type, past_activities)
+    foods = await recommend_food(user.food_pref, past_foods)
 
     return {
         "ai_response": ai_response,

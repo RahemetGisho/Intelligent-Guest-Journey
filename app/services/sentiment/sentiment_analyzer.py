@@ -16,4 +16,5 @@ def analyze_sentiment(text: str) -> str:
         if word in text_lower:
             return "negative"
 
+    # Fixed: Removed the trailing comma to ensure it returns a string, not a tuple
     return "positive"
